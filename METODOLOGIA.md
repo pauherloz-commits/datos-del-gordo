@@ -1,0 +1,48 @@
+# Metodología (resumen)
+
+Todas las cifras salen de `data/processed/*.json` generados por `python main.py`. Euros de 2025 (IPC Maluquer de Motes 1830-2012 + INE 2013-2025); pesetas a 166,386; importes **por décimo**.
+
+## 1. Probabilidad (`analysis/probabilidad.py`)
+P(Gordo con un décimo) = 1/N, con N los números del sorteo (12.000 en 1832; 62.000 en 1966; 100.000 desde 2011). Es **teórica**. No se calcula entre 1833 y 1965 (sin N documentado). Hoy es 8,33 veces menos probable que en 1832 y 1,61 veces que en 1966. La probabilidad de al menos un Gordo en 24 años con un décimo al año es 0,024 %. La frecuencia observada (terminaciones, repeticiones) es descriptiva y no predice: los sorteos son independientes.
+
+## 2. Bruto y neto (`analysis/fiscalidad.py`)
+neto = bruto − 20 % · max(0, bruto − exento); exento por año: ≤2012 todo el premio (sin retención en el modelo), 2013-2017: 2.500 €, 2018: 10.000 €, 2019: 20.000 €, desde 2020: 40.000 €. Se aplica la norma de cada año. Solo desde 2006. Gordo 2025: 328.000 € (18 % para Hacienda); 2013: 320.500 €.
+
+## 3. Precio frente a salario (`analysis/salarios.py`)
+Décimo / SMI mensual: 11,1 % en 1978 y 1,7 % en 2025. El SMI no es el salario medio.
+
+## 4. Geografía y CCAA (`analysis/geografia_ccaa.py`)
+Casos de Gordo por comunidad (dónde se vendió) frente a los esperados según su cuota de lotería vendida (2022); intervalo de Poisson al 95 % y chi² de bondad de ajuste. No hay desviación significativa; no se afirma «más suerte». Recuentos brutos solo describen.
+
+## 5. Simulación Monte Carlo (`analysis/simulation.py`)
+Hipótesis: (1) cuadro de premios vigente por serie (suma 14.000.000 €, comprobado); (2) un décimo con número aleatorio cada Navidad, 24 años, 20 € por año; (3) premios acumulables según reglas (aproximaciones ±1, centenas, terminaciones, reintegro); (4) distribución por décimo estimada con 2.000 sorteos simulados; (5) 500.000 jugadores independientes, semilla 2026; (6) neto con la fiscalidad actual por premio.
+Resultado: esperanza neta 13,09 €/décimo; mediana de premios 160 €; 97,65 % pierde dinero, 69 de cada 100 recuperan menos de la mitad; 1,81 % acaba con ganancia.
+**Verificación exacta:** programación dinámica sobre la distribución de premio por décimo (rejilla de 2 €) da 1,79 % de P(neto > 480 €), coherente con el 1,81 % simulado. La simulación es ilustrativa, no una predicción.
+
+## 6. Límites
+Sin datos económicos fiables antes de 1960; régimen fiscal anterior a 2006 sin verificar; consignación por comunidad solo de 2022; el premio acumulado de la simulación puede dar importes raros (p. ej. 400.100 €) con probabilidad despreciable.
+
+## 7. Capa de Data Science (preguntas, técnicas, supuestos y límites)
+
+Muestra: 216 primeros premios (214 sorteos; 1837 y 1938 tienen dos). Terminación = última cifra (10 categorías) o dos últimas (100). La uniformidad de las terminaciones es teóricamente correcta si el número de bolas del sorteo es múltiplo de 10 (12.000, 62.000, 66.000, 85.000, 100.000); para 1812-1831 no hay N documentado y se asume.
+
+**A. χ² de bondad de ajuste** (`inferencia_terminaciones.py`). H0: p0 = … = p9 = 1/10; H1: alguna pk ≠ 1/10. Última cifra: χ² = 21,2; 9 g.l.; p = 0,012 (asintótico y Monte Carlo coinciden); w de Cohen = 0,31 (efecto medio-grande, pero con n = 216 el efecto mínimo detectable al 80 % de potencia es w = 0,27: el contraste solo detecta desvíos grandes). Supuestos: frecuencias esperadas ≥ 5 (21,6), observaciones independientes (se comprueba con Fisher y autocorrelación: p = 0,21 y 0,54) y muestra fija. Con dos últimas cifras los esperados son 2,16 < 5, así que se usa p Monte Carlo (0,12) y no el asintótico. Por épocas (1812-1900, 1901-1960, 1961-2025) ninguna rechaza por separado (n pequeños). Interpretación: p = 0,012 es evidencia moderada de que las frecuencias no son exactamente uniformes; **no** prueba que las terminaciones sean idénticas ni que el 5 sea predictivo. Es un único contraste sobre 3 hechos (última cifra, 2 cifras, épocas): sin corregir por comparaciones múltiples, 1 de cada 20 saldría «significativo» por azar.
+
+**B. Bootstrap** (`bootstrap_terminaciones.py`). 20.000 remuestras de los 216 sorteos (con reemplazo, semilla fija). IC 95 % percentil por cifra (el del 5: 10,2 %-19,9 %; Clopper-Pearson 10,4 %-20,3 %); distribución de la frecuencia del 5 y del 1; estabilidad del ranking (el 5 es la más frecuente en el 53 % de las remuestras); estabilidad temporal (mitades del histórico). Límites: asume sorteos independientes e idénticamente distribuidos; no es una distribución bajo H0 (el nulo se simula aparte: ver A y `mitos_simulacion.py`); con 100 categorías y 2 casos esperados por celda no es informativo (las terminaciones no vistas tienen IC [0, 0]). No sustituye a un test.
+
+**C. Modelo bayesiano** (`bayes_terminaciones.py`). Multinomial(10) con prior Dirichlet(α); posterior Dirichlet(α + conteos); marginales Beta; IC creíbles 95 %; P(θ5 > θ1) ≈ 1; P(θ5 > 0,10) = 0,98; ROPE 0,10 ± 0,03; evolución acumulada 1812-2025; sensibilidad al prior (α = 0,5; 1; 5; 20). Factor de Bayes H0 (uniforme) frente a Dirichlet: BF01 = 27 (α = 1), 836 (α = 0,5), 0,16 (α = 5) y 0,08 (α = 20): la conclusión **depende del prior**. Diferencia con la inferencia frecuentista: el p-valor responde «¿qué tan raros serían estos datos si H0 fuera cierta?» y el posterior responde «¿qué valores de θ son plausibles dados los datos y el prior?»; son preguntas distintas y no deben mezclarse.
+
+**D. Backtesting** (`backtesting.py`). Sin particiones aleatorias. (1) División única: se eligen las 3 terminaciones más frecuentes con 1812-1960 (5, 4, 3) y se evalúan en 1961-2025 (65 Gordos): 19 aciertos (29,2 %) frente al 30 % esperado al azar (p binomial = 0,60). (2) Walk-forward expansivo y con ventana móvil (80), estrategias «caliente», «fría» y «atrasada» (apostar a lo que lleva más sorteos sin salir), 1 y 2 cifras: 12 configuraciones. El patrón principal acierta 32,0 % frente al 30 % (p = 0,32 frente a 2.000 experimentos nulos); tras corregir por comparaciones múltiples (Bonferroni) ninguna configuración bate al azar. (3) Contraste de fuga: elegir el patrón con todos los datos y evaluarlo en los mismos «acierta» 39,8 % (37 % incluso con ruido puro), lo que demuestra el sobreajuste que el diseño evita. (4) Potencia: solo se detectaría una terminación con probabilidad ≥ 0,20 (64 %) o 0,25 (93 %). Conclusión: los patrones del histórico no se sostienen fuera de muestra.
+
+**E. Monte Carlo avanzado** (`simulation_avanzada.py`). Mismas hipótesis que el punto 5 y: décimos independientes; el resultado final solo depende del número total de décimos T (comprar 24 en un año o 1 al año da la misma distribución final; cambia el flujo de caja). Métricas: valor esperado, varianza, desviación típica, ROI, percentiles 1-99, P(pérdida), P(ganancia) con IC de Wilson, VaR y CVaR al 5 %. CVaR: en un juego con pérdida acotada (como mucho se pierde lo gastado) es poco informativo; se informa y se explica. Comparación de horizontes (5, 10, 24 y 40 años) y de décimos por año (1, 2, 5, 10 y 20), con trayectorias de 1 a 40 años; estrategias de parada (ganar un premio ≥ 1.000 €, stop-loss −200 €, 12 años): ninguna cambia el valor esperado por décimo comprado (se verifica con la fórmula de parada opcional). Sensibilidad: número de jugadores (1.000 a 500.000: converge al valor exacto), 10 semillas (P ganancia 1,78 % ± 0,02), régimen fiscal, precisión de la distribución de premios. Reproducible: semilla derivada de (SEED, nombre del escenario).
+
+**F. Calidad de datos y reproducibilidad** (`validation.py`, `tests/`). 50 comprobaciones: duplicados (con excepciones documentadas 1837 y 1938), faltantes, formatos (número de 5 cifras), rangos (número < N del sorteo), fechas, coherencia de las columnas derivadas (n, última cifra, últimas dos) y de la estructura de premios (suma 14.000.000 €), e integridad de las fuentes (SHA-256 en `data/raw/MANIFEST.sha256`). Tests unitarios de los cálculos (χ², bootstrap, bayes, backtesting sin fuga, simulación, impuestos), de las transformaciones y de los datos.
+
+**G. Mitos con un bombo perfecto** (`mitos_simulacion.py`, vídeo). 200.000 historias de 216 sorteos. «El 5 con 32»: que la cifra **más** repetida llegue a 32 o más ocurre en 15,7 % de las historias (1 de cada 6); para una cifra concreta elegida de antemano sería 1,6 %: por eso se compara con el máximo de las 10 (comparaciones múltiples). «El 1 con 8»: que la cifra menos repetida baje a 8 o menos, 0,45 % (1 de cada 220). Terminaciones sin salir: 15 observadas; con un bombo perfecto se esperan unas 11 (probabilidad de 15 o más: 12,8 %). Repetición de números: con 100.000 números, 20,7 % de las historias tendría alguna repetición (cota inferior); en los datos hay 2 (20297 en 1903 y 2006; 15640 en 1956 y 1978). Ojo: el p del χ² (0,012) y el «1 de cada 6» responden a preguntas distintas (todas las cifras a la vez frente a la mejor cifra).
+
+## 8. Revisión técnica final
+- Los contrastes usan solo datos de cada submuestra; los supuestos (esperados, independencia, equiprobabilidad) están comprobados o documentados.
+- No hay fuga de información: la selección de patrones usa solo el periodo de entrenamiento (tests con datos futuros alterados lo comprueban).
+- Simulaciones reproducibles (semillas derivadas, huella de resultados) y contrastadas con un cálculo exacto (programación dinámica).
+- Las conclusiones no afirman capacidad de predicción: un desvío leve en la muestra (p = 0,012) no se sostiene fuera de ella (29,2 % frente al 30 %).
+- Límites que persisten: espacio de números no documentado antes de 1832 y entre 1833 y 1965; sorteos tratados como independientes; datos geográficos solo de 2022.
